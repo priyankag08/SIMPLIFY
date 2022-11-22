@@ -1,0 +1,144 @@
+291382-Test case preparation and testing to copy design through ADF from source to target
+294050-Masterlist Folder copy Stored procedure creation and testing for the same
+317406-Stored procedure creation to copy data from cdc to trgr table
+powershell automation to trigger pipeline.
+326000-Worked on Stored Procedure creation to copy data
+326001-Worked on Powershell Automation
+317406-Stored procedure creation to copy data from cdc tables to trgr table of perticular ui table.
+Testing for created stored procedure(ADFSyncService)
+
+
+R&D for deleting the design from clients environment
+working on Powershell automation in adf
+Creation of Powershell automation account ,Batch account,Pool,Task&Job creation completed
+Powershell scripting
+Done with stored procedure creation to copy design insertion ,deletion and updated entries from cdc.UI_Formdesign_CT table to trgr.formdesign table
+working on stored procedure creation to copy design insertion ,deletion and updated entries from cdc.UI_FormdesignVersion_CT table to trgr.formdesignVersion table
+R&D on  CDC table cleanup  in ssms
+R&D on  CDC Stored Procedure
+R&D on SP_Execute_Remote
+preparing list of  UI Tables having trigger script
+
+**COPY ACTIVITY PIPELINE STRUCUTRE IN ADF****
+Created 3 different pipelines to execute copy design activity based on design type
+New Design
+For new design we executed 2 child pipelines (Design pipeline And Design Version Pipeline)
+Design Pipeline contains 5 copy activities created for 5 tables 
+Design Version Pipeline contains 3 copy activities created for 3 tables 
+      2. Design Version
+For Design Version we executed 1 child pipeline ( Design Version Pipeline )
+Design Version Pipeline contains 3 activities created for 3 tables 
+      3. Expression Rule
+For Expression Rule we executed 1 child pipeline ( Expression Rule Pipeline )
+Expression Rule Pipeline contains 2 activities created for 2 tables
+
+***ADF PIPELINE STRUCTURE**
+Created ADF pipeline to copy/update designs from S1 environment to client environment.
+This process is based on TenantID and DesignType(i.e. Entire Design, Design Version Or Expression Rule)
+For client environment connection, dynamic connection strings will be passed to the Linked Service at runtime.
+According to DesignType pipeline will switch it's flow of execution (Executes appropriate child pipelines)  
+
+347430 -Hangfire Job Service
+354371 -Creating Stored Procedures For trigger logic
+354374 -SSIS project Implementation and error handling
+358090 -Unit Testing For Entire Design and Design Version SSIS Pakages
+360748 -Expression Rule Testing
+
+
+
+
+
+
+
+
+ADF TASKS:
+1.Design Delete Script Modification
+
+Problem Statement :
+The general Design Delete script can delete designs whose data is not present in Fldr.FormInstance table.
+If a Design have more than one Design Versions then its not possible to delete design.
+Not possible to delete a Design with no version.
+Solution : 
+Made changes in script so it will not check for data of a design version in Fldr.FormInstance table, hence it will delete the design but data will remain.
+Wrote a while loop to delete each design version
+Made changes in existing code to delete Designs with no version.
+
+
+2.Implementing functionality to update MDM.SchemaUpdateTracker table
+
+When any changes happen to FormDesignVersionData of a design at client DB, then we have updated MDM.SchemaUpdateTracker table at client side also.
+
+If FormDesignVersionID is already present in table then we are going to update that row by replacing OldJsonHash with CurrentJsonHash and CurrentJsonHsh by new/updated FormDesignVersionData which is in zip format.
+
+If FormDesignVersionID is not present then we are inserting new entry in table and we insert zipped FormDesignVersionData in CurrentJsonHash and we keep null in OldJsonHash.
+
+Stored Proc : 
+ALTER PROCEDURE [sync].[SyncUpdateMDMTable] @FDID INT, @FDVID INT
+AS
+DECLARE @SID AS INT
+Declare @JsonHash NVARCHAR(MAX)
+
+
+set  @JsonHash = (select dbo.GZip(FormDesignVersionData) from ui.FormDesignVersion where FormDesignVersionID = @FDVID)
+
+
+SET @SID = (SELECT schemaupdatetrackerid FROM mdm.SchemaUpdateTracker WHERE FormdesignID = @FDID and FormdesignVersionID = @FDVID)
+
+IF(@SID is null)
+BEGIN
+    INSERT INTO mdm.SchemaUpdateTracker(FormDesignID,FormDesignVersionID,Status,OldJsonHash,CurrentJsonHash,AddedDate)
+    VALUES(@FDID,@FDVID,1,'',@JsonHash,GETDATE())
+END
+ELSE
+BEGIN
+    DECLARE @TempCurrentJsonHash AS NVARCHAR(MAX)
+    SET @TempCurrentJsonHash = (SELECT CurrentJsonHash FROM mdm.SchemaUpdateTracker WHERE FormdesignID = @FDID and FormdesignVersionID = @FDVID)
+    UPDATE MDM.SchemaUpdateTracker
+    SET Status = 3, OldJsonHash = @TempCurrentJsonHash, CurrentJsonHash = @JsonHash,UpdatedDate = GETDATE() WHERE FormdesignID = @FDID and FormdesignVersionID = @FDVID
+END
+
+
+3.MDM Schema Sync - queue in client database
+
+In MDM Schema Sync, we have implemented a feature through which we can insert/update changes in MDM.SchemaUpdateTracker table at client side.
+
+To Insert/Update changes in MDM. we added following activities in ADF
+Lookup Activity : Query to fetch and zip the record 
+Declare @FDVD as nvarchar(max)
+set @FDVD =  (select FormDesignVersionData from UI.FormDesignVersion where FormDesignVersionId = FormDesignID)
+Select  dbo.Gzip(@FDVD) as QueryZip
+Stored Procedure : To insert/update records
+ALTER PROCEDURE [UI].[SyncUpdateMDMTable] @FDID INT, @FDVID INT, @JsonHash NVARCHAR(MAX)
+AS
+DECLARE @SID AS INT
+SET @SID = (SELECT schemaupdatetrackerid FROM mdm.SchemaUpdateTracker WHERE FormdesignID = @FDID and FormdesignVersionID = @FDVID)
+IF(@SID is null)
+BEGIN
+INSERT INTO mdm.SchemaUpdateTracker(FormDesignID,FormDesignVersionID,Status,OldJsonHash,CurrentJsonHash,AddedDate)
+VALUES(@FDID,@FDVID,1,'',@JsonHash,GETDATE())
+END
+ELSE
+BEGIN
+DECLARE @TempCurrentJsonHash AS NVARCHAR(MAX)
+SET @TempCurrentJsonHash = (SELECT CurrentJsonHash FROM mdm.SchemaUpdateTracker WHERE FormdesignID = @FDID and FormdesignVersionID = @FDVID)
+UPDATE MDM.SchemaUpdateTracker
+SET Status = 3, OldJsonHash = @TempCurrentJsonHash, CurrentJsonHash = @JsonHash,UpdatedDate = GETDATE() WHERE FormdesignID = @FDID and FormdesignVersionID = @FDVID
+END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

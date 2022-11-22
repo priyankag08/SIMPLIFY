@@ -1,0 +1,6 @@
+restore database
+svn checkout
+copy files from bin of core
+paste in pCKAGES FOLDER
+build core
+build project

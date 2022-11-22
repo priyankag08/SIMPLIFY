@@ -1,0 +1,1 @@
+exec [dbo].[Create_New_User] 'priyanka.gaikwad','Simplify SuperUser','priyanka.gaikwad@simplifyhealthcare.com','priyanka.gaikwad','superuser','superuser'
